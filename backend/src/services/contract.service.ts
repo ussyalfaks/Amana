@@ -1,3 +1,4 @@
+import { Trade } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import type { TradeRecord } from "../types/trade";
 
@@ -22,6 +23,9 @@ export interface BuildCreateTradeTxResult {
   unsignedXdr: string;
 }
 
+export interface BuildDepositTxResult {
+  unsignedXdr: string;
+}
 /** Vitest-only hook to avoid live Soroban RPC in unit tests. */
 export function __setRpcServerFactoryForTests(factory: RpcServerFactory): void {
   serverFactory = factory;
@@ -151,15 +155,18 @@ export async function buildReleaseFundsTx(
 export class ContractService {
   private readonly rpcServer: StellarSdk.rpc.Server;
   private readonly contractId: string;
+  private readonly usdcContractId: string;
   private readonly networkPassphrase: string;
 
   constructor(
     rpcUrl: string = getRpcUrl(),
     contractId: string = getEscrowContractId(),
+    usdcContractId: string = process.env.USDC_CONTRACT_ID || "",
     networkPassphrase: string = getNetworkPassphrase(),
   ) {
     this.rpcServer = getRpcServer(rpcUrl);
     this.contractId = contractId;
+    this.usdcContractId = usdcContractId;
     this.networkPassphrase = networkPassphrase;
   }
 
@@ -200,6 +207,42 @@ export class ContractService {
     };
   }
 
+  public async buildDepositTx(
+    trade: Pick<Trade, "tradeId" | "buyer" | "amountUsdc">,
+  ): Promise<BuildDepositTxResult> {
+    if (!this.contractId) {
+      throw new Error("CONTRACT_ID is not configured");
+    }
+
+    if (!this.usdcContractId) {
+      throw new Error("USDC_CONTRACT_ID is not configured");
+    }
+
+    const account = await this.rpcServer.getAccount(trade.buyer);
+    const contract = new StellarSdk.Contract(this.contractId);
+
+    // The current escrow contract pulls the buyer's USDC during `deposit()`,
+    // so the prepared Soroban transaction is a single deposit invocation.
+    const transaction = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        contract.call(
+          "deposit",
+          StellarSdk.nativeToScVal(BigInt(trade.tradeId), { type: "u64" }),
+        ),
+      )
+      .setTimeout(DEFAULT_TIMEOUT_SECONDS)
+      .build();
+
+    const preparedTransaction =
+      await this.rpcServer.prepareTransaction(transaction);
+
+    return {
+      unsignedXdr: preparedTransaction.toXDR(),
+    };
+  }
   private toContractAmount(amountUsdc: string): bigint {
     const [wholePart, fractionPart = ""] = amountUsdc.split(".");
     const paddedFraction = `${fractionPart}0000000`.slice(

@@ -17,10 +17,12 @@ describe("Trade Routes", () => {
   const buyerAddress = StellarSdk.Keypair.random().publicKey();
   const sellerAddress = StellarSdk.Keypair.random().publicKey();
   let token: string;
+  let sellerToken: string;
 
   beforeAll(() => {
     const secret = process.env.JWT_SECRET || "default_secret";
     token = jwt.sign({ walletAddress: buyerAddress }, secret);
+    sellerToken = jwt.sign({ walletAddress: sellerAddress }, secret);
   });
 
   afterEach(() => {
@@ -83,5 +85,71 @@ describe("Trade Routes", () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("Unauthorized");
+  });
+
+  it("returns unsignedXdr for a valid buyer deposit request", async () => {
+    (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
+      tradeId: "4294967297",
+      buyer: buyerAddress,
+      seller: sellerAddress,
+      amountUsdc: "125.1234567",
+      status: "CREATED",
+    });
+    (ContractService.prototype.buildDepositTx as jest.Mock).mockResolvedValue({
+      unsignedXdr: "AAAA-deposit-xdr",
+    });
+
+    const res = await request(app)
+      .post("/trades/4294967297/deposit")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      unsignedXdr: "AAAA-deposit-xdr",
+    });
+    expect(TradeService.prototype.getTradeById).toHaveBeenCalledWith(
+      "4294967297",
+      buyerAddress
+    );
+    expect(ContractService.prototype.buildDepositTx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tradeId: "4294967297",
+        buyer: buyerAddress,
+      })
+    );
+  });
+
+  it("returns 403 if the caller is the seller", async () => {
+    (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
+      tradeId: "4294967297",
+      buyer: buyerAddress,
+      seller: sellerAddress,
+      amountUsdc: "125.1234567",
+      status: "CREATED",
+    });
+
+    const res = await request(app)
+      .post("/trades/4294967297/deposit")
+      .set("Authorization", `Bearer ${sellerToken}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Forbidden");
+  });
+
+  it("returns 400 if the trade is already funded", async () => {
+    (TradeService.prototype.getTradeById as jest.Mock).mockResolvedValue({
+      tradeId: "4294967297",
+      buyer: buyerAddress,
+      seller: sellerAddress,
+      amountUsdc: "125.1234567",
+      status: "FUNDED",
+    });
+
+    const res = await request(app)
+      .post("/trades/4294967297/deposit")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Trade must be in CREATED status");
   });
 });

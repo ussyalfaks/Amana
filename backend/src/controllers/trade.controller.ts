@@ -1,3 +1,4 @@
+import { TradeStatus } from "@prisma/client";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import type { Request, Response } from "express";
 import { AuthRequest } from "../middleware/auth.middleware";
@@ -7,7 +8,7 @@ import {
   buildReleaseFundsTx,
   ContractService,
 } from "../services/contract.service";
-import { TradeService } from "../services/trade.service";
+import { TradeAccessDeniedError, TradeService } from "../services/trade.service";
 
 const CALLER_HEADER = "x-stellar-address";
 const AMOUNT_USDC_PATTERN = /^\d+(?:\.\d{1,7})?$/;
@@ -185,6 +186,55 @@ export class TradeController {
     }
   };
 
+  public buildDepositTx = async (
+    req: AuthRequest,
+    res: Response,
+  ): Promise<Response | void> => {
+    try {
+      const tradeId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!tradeId) {
+        return res.status(400).json({ error: "Trade id is required" });
+      }
+
+      const callerAddress = req.user?.walletAddress;
+      if (!callerAddress) {
+        return res
+          .status(400)
+          .json({ error: "Wallet address not found in token" });
+      }
+
+      if (!this.isValidPublicKey(callerAddress)) {
+        return res.status(400).json({ error: "Invalid buyer wallet address" });
+      }
+
+      const trade = await this.tradeService.getTradeById(tradeId, callerAddress);
+      if (!trade) {
+        return res.status(404).json({ error: "Trade not found" });
+      }
+
+      if (trade.buyer !== callerAddress) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (trade.status !== TradeStatus.CREATED) {
+        return res
+          .status(400)
+          .json({ error: "Trade must be in CREATED status" });
+      }
+
+      const { unsignedXdr } = await this.contractService.buildDepositTx(trade);
+      return res.status(200).json({ unsignedXdr });
+    } catch (error) {
+      if (error instanceof TradeAccessDeniedError) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      console.error("Deposit transaction build failed:", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to build deposit transaction" });
+    }
+  };
   private isValidPublicKey(value: unknown): value is string {
     return (
       typeof value === "string" &&

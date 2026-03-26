@@ -7,6 +7,7 @@ import YAML from "yamljs";
 import { PrismaClient } from "@prisma/client";
 import { EventListenerService } from "./services/eventListener.service";
 import { walletRoutes } from "./routes/wallet.routes";
+import { authRoutes } from "./routes/auth.routes";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use("/trades", createTradeRouter(prisma));
 
 app.use("/wallet", walletRoutes);
+app.use("/auth", authRoutes);
 
 const docsDir = path.join(__dirname, "docs");
 const openapiYamlPath = path.join(docsDir, "openapi.yaml");

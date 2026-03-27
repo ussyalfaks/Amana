@@ -1,13 +1,5 @@
-export { BentoCard } from "./BentoCard";
-export { SuccessState } from "./SuccessState";
-export type { SuccessStateProps } from "./SuccessState";
-export { Badge } from "./Badge";
-export type { BadgeProps } from "./Badge";
 export { Icon } from "./Icon";
 export type { IconProps } from "./Icon";
+export { BentoCard } from "./BentoCard";
 
-export { FormField } from "./FormField";
-export type { FormFieldProps } from "./FormField";
-export { LegalDisclaimerModal } from "./LegalDisclaimerModal";
-export type { LegalDisclaimerModalProps } from "./LegalDisclaimerModal";
-
+export type {StepIndicatorProps, Step} from "./StepIndicator";

@@ -118,7 +118,7 @@
     ],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
         {
           "function": {
             "contract_fn": {
@@ -129,10 +129,10 @@
                   "u64": "1"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "string": "QmSmallLoss80Seller"
+                  "string": "QmSetupDisputeReason"
                 }
               ]
             }
@@ -176,7 +176,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 },
                 {
-                  "u32": 9000
+                  "u32": 5000
                 }
               ]
             }
@@ -185,9 +185,6 @@
         }
       ]
     ],
-    [],
-    [],
-    [],
     []
   ],
   "ledger": {
@@ -274,7 +271,7 @@
                       "symbol": "initiator"
                     },
                     "val": {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                     }
                   },
                   {
@@ -282,7 +279,7 @@
                       "symbol": "reason_hash"
                     },
                     "val": {
-                      "string": "QmSmallLoss80Seller"
+                      "string": "QmSetupDisputeReason"
                     }
                   }
                 ]
@@ -361,7 +358,7 @@
                       "symbol": "buyer_loss_bps"
                     },
                     "val": {
-                      "u32": 2000
+                      "u32": 5000
                     }
                   },
                   {
@@ -399,7 +396,7 @@
                       "symbol": "seller_loss_bps"
                     },
                     "val": {
-                      "u32": 8000
+                      "u32": 5000
                     }
                   },
                   {
@@ -619,7 +616,7 @@
               "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
               "key": {
                 "ledger_key_nonce": {
-                  "nonce": "4837995959683129791"
+                  "nonce": "2032731177588607455"
                 }
               },
               "durability": "temporary",
@@ -636,10 +633,10 @@
           "data": {
             "contract_data": {
               "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
               "key": {
                 "ledger_key_nonce": {
-                  "nonce": "2032731177588607455"
+                  "nonce": "4837995959683129791"
                 }
               },
               "durability": "temporary",
@@ -747,7 +744,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "800"
+                      "i128": "2500"
                     }
                   },
                   {
@@ -799,7 +796,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "9108"
+                      "i128": "7425"
                     }
                   },
                   {
@@ -851,7 +848,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "92"
+                      "i128": "75"
                     }
                   },
                   {

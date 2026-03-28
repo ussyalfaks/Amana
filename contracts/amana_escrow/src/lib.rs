@@ -2425,4 +2425,218 @@ mod integration_tests {
         let evidence_list_after = client.get_evidence_list(&trade_id);
         assert_eq!(evidence_list_after.len(), 0, "Evidence list should remain empty after delivery confirmation");
     }
+
+    // -----------------------------------------------------------------------
+    // Additional comprehensive tests
+    // -----------------------------------------------------------------------
+
+    /// Test asymmetric loss-sharing with mediator ruling favoring buyer
+    /// Tests 30/70 loss-sharing (buyer bears 30%, seller bears 70%) with 40% seller ruling
+    /// This validates the contract handles asymmetric ratios correctly when buyer wins
+    #[test]
+    fn test_asymmetric_loss_sharing_buyer_favored() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        
+        client.initialize(&admin, &usdc_id, &treasury, &100);
+        
+        let amount = 10_000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        
+        // Create trade with 30/70 loss-sharing (seller bears 70% of loss)
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &3000_u32, &7000_u32);
+        client.deposit(&trade_id);
+        client.raise_dispute(&trade_id, &buyer);
+        
+        let mediator = Address::generate(&env);
+        client.set_mediator(&mediator);
+        
+        // Mediator rules 40% for seller (60% loss - buyer wins)
+        // loss = 60% = 6,000
+        // seller bears: 6,000 * 70% = 4,200
+        // buyer bears: 6,000 * 30% = 1,800
+        // seller_raw = 10,000 - 4,200 = 5,800
+        // fee = 5,800 * 1% = 58
+        // seller_net = 5,742
+        // buyer_refund = 4,200
+        client.resolve_dispute(&trade_id, &4_000_u32);
+        
+        let token = token::Client::new(&env, &usdc_id);
+        assert_eq!(token.balance(&seller), 5_742, "seller with 70% loss burden");
+        assert_eq!(token.balance(&treasury), 58, "fee on seller portion");
+        assert_eq!(token.balance(&buyer), 4_200, "buyer refund with 30% loss burden");
+        assert_eq!(token.balance(&client.address), 0, "escrow empty");
+        
+        // Verify total adds up
+        assert_eq!(5_742 + 58 + 4_200, 10_000, "total must equal original amount");
+    }
+
+    /// Test complete dispute lifecycle with evidence submission and resolution
+    /// This integration test validates the entire flow from trade creation to resolution
+    /// including multiple evidence submissions from all parties
+    #[test]
+    fn test_complete_dispute_lifecycle_with_evidence() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        
+        client.initialize(&admin, &usdc_id, &treasury, &100);
+        
+        let amount = 50_000_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        
+        // Step 1: Create trade with 50/50 loss-sharing
+        env.ledger().with_mut(|l| l.timestamp = 1_000);
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &5000_u32, &5000_u32);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Created));
+        assert_eq!(trade.amount, amount);
+        
+        // Step 2: Buyer deposits funds
+        env.ledger().with_mut(|l| l.timestamp = 2_000);
+        client.deposit(&trade_id);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Funded));
+        assert_eq!(token_client.balance(&contract_id), amount);
+        
+        // Step 3: Buyer initiates dispute with reason
+        env.ledger().with_mut(|l| l.timestamp = 3_000);
+        let dispute_reason = soroban_sdk::String::from_str(&env, "QmDisputeReason_GoodsNotAsDescribed");
+        client.initiate_dispute(&trade_id, &buyer, &dispute_reason);
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Disputed));
+        
+        let dispute_record = client.get_dispute_record(&trade_id).expect("dispute record must exist");
+        assert_eq!(dispute_record.initiator, buyer);
+        assert_eq!(dispute_record.reason_hash, dispute_reason);
+        
+        // Step 4: Buyer submits evidence
+        env.ledger().with_mut(|l| l.timestamp = 4_000);
+        let buyer_evidence = soroban_sdk::String::from_str(&env, "QmBuyerEvidence_PhotosOfDamagedGoods");
+        let buyer_desc = soroban_sdk::String::from_str(&env, "Photos showing damaged agricultural products");
+        client.submit_evidence(&trade_id, &buyer, &buyer_evidence, &buyer_desc);
+        
+        // Step 5: Seller submits counter-evidence
+        env.ledger().with_mut(|l| l.timestamp = 5_000);
+        let seller_evidence = soroban_sdk::String::from_str(&env, "QmSellerEvidence_PackagingAndShipping");
+        let seller_desc = soroban_sdk::String::from_str(&env, "Proof of proper packaging and shipping documentation");
+        client.submit_evidence(&trade_id, &seller, &seller_evidence, &seller_desc);
+        
+        // Step 6: Register mediator and submit independent evidence
+        let mediator = Address::generate(&env);
+        client.add_mediator(&mediator);
+        
+        env.ledger().with_mut(|l| l.timestamp = 6_000);
+        let mediator_evidence = soroban_sdk::String::from_str(&env, "QmMediatorEvidence_InspectionReport");
+        let mediator_desc = soroban_sdk::String::from_str(&env, "Independent inspection findings");
+        client.submit_evidence(&trade_id, &mediator, &mediator_evidence, &mediator_desc);
+        
+        // Verify all evidence is recorded
+        let evidence_list = client.get_evidence_list(&trade_id);
+        assert_eq!(evidence_list.len(), 3, "should have 3 evidence records");
+        
+        // Step 7: Mediator resolves dispute (65% for seller, 35% loss)
+        env.ledger().with_mut(|l| l.timestamp = 7_000);
+        client.set_mediator(&mediator);
+        client.resolve_dispute(&trade_id, &6_500_u32);
+        
+        // Step 8: Verify final state
+        let trade = client.get_trade(&trade_id);
+        assert!(matches!(trade.status, TradeStatus::Completed));
+        
+        // Calculate expected amounts:
+        // loss = 35% = 17,500
+        // seller bears: 17,500 * 50% = 8,750
+        // seller_raw = 50,000 - 8,750 = 41,250
+        // fee = 41,250 * 1% = 412.5 = 412 (integer division)
+        // seller_net = 41,250 - 412 = 40,838
+        // buyer_refund = 8,750
+        
+        let token = token::Client::new(&env, &usdc_id);
+        assert_eq!(token.balance(&seller), 40_838, "seller final payout");
+        assert_eq!(token.balance(&buyer), 8_750, "buyer refund");
+        assert_eq!(token.balance(&treasury), 412, "platform fee");
+        assert_eq!(token.balance(&contract_id), 0, "escrow fully distributed");
+        
+        // Verify evidence remains accessible after resolution
+        let evidence_list_final = client.get_evidence_list(&trade_id);
+        assert_eq!(evidence_list_final.len(), 3, "evidence preserved after resolution");
+    }
+
+    /// Test edge case: very small amounts with loss-sharing and fee calculation
+    /// Validates that integer division doesn't cause rounding errors that break invariants
+    #[test]
+    fn test_small_amount_loss_sharing_rounding() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        
+        client.initialize(&admin, &usdc_id, &treasury, &100);
+        
+        // Use a small amount to test rounding behavior
+        let amount = 100_i128;
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &amount);
+        
+        // Create trade with 60/40 loss-sharing
+        let trade_id = client.create_trade(&buyer, &seller, &amount, &6000_u32, &4000_u32);
+        client.deposit(&trade_id);
+        client.raise_dispute(&trade_id, &buyer);
+        
+        let mediator = Address::generate(&env);
+        client.set_mediator(&mediator);
+        
+        // Mediator rules 55% for seller (45% loss)
+        // loss = 45% of 100 = 45
+        // seller bears: 45 * 40% = 18
+        // buyer bears: 45 * 60% = 27
+        // seller_raw = 100 - 18 = 82
+        // fee = 82 * 1% = 0.82 = 0 (integer division)
+        // seller_net = 82 - 0 = 82
+        // buyer_refund = 18
+        client.resolve_dispute(&trade_id, &5_500_u32);
+        
+        let token = token::Client::new(&env, &usdc_id);
+        let seller_balance = token.balance(&seller);
+        let buyer_balance = token.balance(&buyer);
+        let treasury_balance = token.balance(&treasury);
+        let escrow_balance = token.balance(&client.address);
+        
+        // Verify no funds are lost or created
+        let total = seller_balance + buyer_balance + treasury_balance + escrow_balance;
+        assert_eq!(total, amount, "total must equal original amount - no rounding loss");
+        
+        // Verify escrow is empty
+        assert_eq!(escrow_balance, 0, "escrow must be fully distributed");
+        
+        // Verify seller got the majority (since 55% ruling)
+        assert!(seller_balance > buyer_balance, "seller should receive more than buyer");
+        
+        // Log actual distribution for verification
+        assert_eq!(seller_balance, 82, "seller receives 82");
+        assert_eq!(buyer_balance, 18, "buyer receives 18");
+        assert_eq!(treasury_balance, 0, "treasury receives 0 (fee too small)");
+    }
 }
+

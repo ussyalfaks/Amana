@@ -23,12 +23,6 @@ const prismaClientSingleton = () => {
     }
 
     if (model === 'Trade') {
-      if (typeof data.buyer === 'string') {
-        data.buyer = data.buyer.toLowerCase();
-      }
-      if (typeof data.seller === 'string') {
-        data.seller = data.seller.toLowerCase();
-      }
       if (typeof data.buyerAddress === 'string') {
         data.buyerAddress = data.buyerAddress.toLowerCase();
       }

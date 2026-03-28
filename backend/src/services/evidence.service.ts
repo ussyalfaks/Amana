@@ -21,11 +21,13 @@ export class EvidenceTradeNotFoundError extends Error {
 
 type EvidenceDatabase = {
     trade: Pick<PrismaClient["trade"], "findUnique">;
-    tradeEvidence: Pick<PrismaClient["tradeEvidence"], "findMany">;
+    tradeEvidence: Pick<PrismaClient["tradeEvidence"], "findMany" | "create">;
 };
 
 export class EvidenceService {
     private ipfs: IPFSService;
+    /** In-process cache: CID → resolved gateway URL */
+    private readonly urlCache = new Map<string, string>();
 
     constructor(
         private readonly prisma: EvidenceDatabase = defaultPrisma as unknown as EvidenceDatabase,
@@ -61,9 +63,48 @@ export class EvidenceService {
             filename: r.filename,
             mimeType: r.mimeType,
             uploadedBy: r.uploadedBy,
-            url: this.ipfs.getFileUrl(r.cid),
+            url: this.resolveGatewayUrl(r.cid),
             createdAt: r.createdAt,
         }));
+    }
+
+    /**
+     * Upload a video file to IPFS and persist the evidence record.
+     * Caller must be buyer or seller of the referenced trade.
+     */
+    async uploadVideoEvidence(
+        tradeId: string,
+        callerAddress: string,
+        file: Express.Multer.File,
+    ) {
+        const trade = await this.prisma.trade.findUnique({ where: { tradeId } });
+        if (!trade) throw new EvidenceTradeNotFoundError();
+
+        const caller = callerAddress.toLowerCase();
+        if (
+            trade.buyerAddress.toLowerCase() !== caller &&
+            trade.sellerAddress.toLowerCase() !== caller
+        ) {
+            throw new EvidenceAccessDeniedError();
+        }
+
+        const cid = await this.ipfs.uploadFile(file.buffer, file.originalname);
+
+        const record = await this.prisma.tradeEvidence.create({
+            data: {
+                tradeId,
+                cid,
+                filename: file.originalname,
+                mimeType: file.mimetype,
+                uploadedBy: caller,
+            },
+        });
+
+        return {
+            evidenceId: record.id,
+            cid,
+            ipfsUrl: this.resolveGatewayUrl(cid),
+        };
     }
 
     /**
@@ -71,8 +112,7 @@ export class EvidenceService {
      * Returns an axios response stream so the route can pipe it.
      */
     async streamFromIPFS(cid: string, range?: string) {
-        const gateway = process.env.IPFS_GATEWAY_URL || "https://gateway.pinata.cloud/ipfs";
-        const url = `${gateway.replace(/\/$/, "")}/${cid}`;
+        const url = this.resolveGatewayUrl(cid);
 
         const headers: Record<string, string> = {};
         if (range) headers["Range"] = range;
@@ -84,5 +124,15 @@ export class EvidenceService {
         });
 
         return response;
+    }
+
+    /** Resolve and cache the public gateway URL for a CID. */
+    private resolveGatewayUrl(cid: string): string {
+        if (this.urlCache.has(cid)) {
+            return this.urlCache.get(cid)!;
+        }
+        const url = this.ipfs.getFileUrl(cid);
+        this.urlCache.set(cid, url);
+        return url;
     }
 }

@@ -1,3 +1,7 @@
+import { VaultDashboard } from "@/components/vault";
+
+export default function VaultPage() {
+  return <VaultDashboard />;
 "use client";
 
 import React from "react";

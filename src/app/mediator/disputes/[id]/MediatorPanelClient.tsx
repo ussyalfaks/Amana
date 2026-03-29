@@ -138,149 +138,112 @@ export default function MediatorPanelClient({ disputeId }: Props) {
   }
 
   return (
-    <div className="min-h-screen p-6 bg-bg-primary text-text-primary">
+    <div className="min-h-screen p-6 bg-gray-50">
       <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
-        <div className="col-span-12 md:col-span-7">
-          <div className="rounded-xl overflow-hidden shadow-modal bg-bg-card p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h4 className="text-xl font-semibold">Evidence</h4>
-                <p className="text-sm text-text-secondary mt-1">
-                  Video evidence supplied via IPFS / Pinata
-                </p>
-              </div>
-              <div className="text-sm text-text-secondary text-right">
-                <div>
-                  Dispute ID: <span className="font-medium">{disputeId}</span>
-                </div>
-                <div className="mt-1">
-                  Gateway:{" "}
-                  <span className="font-medium">
-                    {PINATA_GATEWAYS[activeGatewayIndex]}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 bg-black rounded-lg overflow-hidden aspect-video">
-              <video
-                controls
-                className="w-full h-full object-contain bg-black"
-                src={pinataUrl}
-                onError={() => {
-                  if (activeGatewayIndex < PINATA_GATEWAYS.length - 1) {
-                    setActiveGatewayIndex((prev) => prev + 1);
-                  }
-                }}
-              />
-            </div>
-
-            <div className="mt-3 flex items-center justify-between text-sm text-text-secondary">
-              <div>
-                Pinata CID:{" "}
-                <span className="font-mono text-xs text-text-secondary">
-                  {cid}
+        <div className="col-span-7">
+          <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-modal">
+            <video
+              controls
+              className="w-full h-full object-contain bg-black"
+              src={pinataUrl}
+              onError={() => {
+                if (activeGatewayIndex < PINATA_GATEWAYS.length - 1) {
+                  setActiveGatewayIndex((prev) => prev + 1);
+                }
+              }}
+            />
+          </div>
+          <div className="mt-3 text-sm text-gray-600">
+            <div>Dispute ID: {disputeId}</div>
+            <div>Pinata CID: {cid}</div>
+            <div>Gateway: {PINATA_GATEWAYS[activeGatewayIndex]}</div>
+            <div>Mapped address: {address ?? "Not connected"}</div>
+            <div className="mt-2">
+              {isMediator ? (
+                <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
+                  Mediator access
                 </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div
-                  className={`px-2 py-1 rounded ${isMediator ? "bg-status-success text-text-inverse" : "bg-red-50 text-red-700"}`}
-                >
-                  {isMediator ? "Mediator access" : "Not a mediator"}
-                </div>
-                <button
-                  onClick={() =>
-                    setActiveGatewayIndex(
-                      (prev) => (prev + 1) % PINATA_GATEWAYS.length,
-                    )
-                  }
-                  className="px-3 py-1 bg-bg-elevated text-text-primary rounded text-sm"
-                >
-                  Switch Gateway
-                </button>
-              </div>
+              ) : (
+                <span className="px-2 py-1 bg-red-100 text-red-800 rounded">
+                  Not a mediator
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="col-span-12 md:col-span-5">
-          <div className="bg-bg-card rounded-xl shadow-md p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-semibold">Mediator Resolution</h3>
-                <p className="text-sm text-text-secondary mt-1">
-                  Resolve dispute on-chain with a chosen payout split.
-                </p>
-              </div>
-            </div>
+        <div className="col-span-5">
+          <div className="bg-white rounded-xl shadow-md p-5 space-y-4">
+            <h3 className="text-lg font-semibold">Loss Ratio Executor</h3>
+            <p className="text-sm text-gray-600">
+              Resolve dispute with explicit seller payout basis points.
+            </p>
 
             {!isAuthorized && (
               <button
                 onClick={() => void connectWallet()}
                 disabled={isLoading}
-                className="w-full rounded-md bg-gold text-text-inverse py-2 font-medium"
+                className="w-full rounded-md bg-black text-white py-2"
               >
                 {isLoading ? "Connecting..." : "Connect Freighter"}
               </button>
             )}
 
             {!isMediator && (
-              <div className="rounded-md border border-border-default bg-red-50 text-red-700 text-sm p-3">
+              <div className="rounded-md border border-red-200 bg-red-50 text-red-700 text-sm p-3">
                 Unauthorized wallet. Access is restricted to mediator addresses.
               </div>
             )}
 
-            <div className="space-y-3">
-              <div className="flex gap-3">
-                <button
-                  disabled={!isMediator || isSubmittingTx}
-                  onClick={() => buildExec("50-50")}
-                  className="flex-1 rounded-md border border-border-default px-3 py-2 text-sm disabled:opacity-50"
-                >
-                  Build 50/50
-                </button>
-                <button
-                  disabled={!isMediator || isSubmittingTx}
-                  onClick={() => buildExec("70-30")}
-                  className="flex-1 rounded-md border border-border-default px-3 py-2 text-sm disabled:opacity-50"
-                >
-                  Build 70/30
-                </button>
-              </div>
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                disabled={!isMediator || isSubmittingTx}
+                onClick={() => buildExec("50-50")}
+                className="w-full rounded-md border px-3 py-2 disabled:opacity-50"
+              >
+                Build 50/50 String
+              </button>
 
-              <div className="flex gap-3">
-                <button
-                  disabled={!isMediator || isSubmittingTx}
-                  onClick={() => void executeResolution(5000)}
-                  className="flex-1 rounded-md bg-gold text-text-inverse px-3 py-2 font-semibold disabled:opacity-50"
-                >
-                  Resolve 50/50 On‑Chain
-                </button>
-                <button
-                  disabled={!isMediator || isSubmittingTx}
-                  onClick={() => void executeResolution(7000)}
-                  className="flex-1 rounded-md bg-emerald text-text-inverse px-3 py-2 font-semibold disabled:opacity-50"
-                >
-                  Resolve 70/30 On‑Chain
-                </button>
-              </div>
+              <button
+                disabled={!isMediator || isSubmittingTx}
+                onClick={() => buildExec("70-30")}
+                className="w-full rounded-md border px-3 py-2 disabled:opacity-50"
+              >
+                Build 70/30 String
+              </button>
+
+              <button
+                disabled={!isMediator || isSubmittingTx}
+                onClick={() => void executeResolution(5000)}
+                className="w-full rounded-md bg-emerald-700 text-white px-3 py-2 disabled:opacity-50"
+              >
+                Resolve 50/50 On-Chain
+              </button>
+
+              <button
+                disabled={!isMediator || isSubmittingTx}
+                onClick={() => void executeResolution(7000)}
+                className="w-full rounded-md bg-emerald-700 text-white px-3 py-2 disabled:opacity-50"
+              >
+                Resolve 70/30 On-Chain
+              </button>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary">
+              <label className="block text-sm font-medium text-gray-700">
                 Generated Execution String
               </label>
               <textarea
                 readOnly
                 value={execString}
-                className="mt-2 block w-full rounded-md bg-bg-elevated border border-border-default shadow-sm h-28 p-3 text-sm text-text-primary font-mono"
+                className="mt-1 block w-full rounded-md border-gray-200 shadow-sm h-24 p-2 text-sm"
               />
-              <p className="mt-2 text-xs text-text-secondary">{txStatus}</p>
-              <div className="mt-3 flex gap-2">
+              <p className="mt-2 text-xs text-gray-600">{txStatus}</p>
+              <div className="mt-2 flex gap-2">
                 <button
                   disabled={!execString}
                   onClick={() => navigator.clipboard?.writeText(execString)}
-                  className="px-3 py-1 bg-bg-elevated border border-border-default text-text-primary rounded disabled:opacity-50"
+                  className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-50"
                 >
                   Copy
                 </button>
@@ -289,10 +252,20 @@ export default function MediatorPanelClient({ disputeId }: Props) {
                   onClick={(e) => {
                     if (!execString) e.preventDefault();
                   }}
-                  className="px-3 py-1 bg-bg-elevated border border-border-default rounded text-sm text-text-primary"
+                  className="px-3 py-1 bg-gray-100 rounded text-sm"
                 >
                   Preview
                 </a>
+                <button
+                  onClick={() =>
+                    setActiveGatewayIndex(
+                      (prev) => (prev + 1) % PINATA_GATEWAYS.length,
+                    )
+                  }
+                  className="px-3 py-1 bg-gray-100 rounded text-sm"
+                >
+                  Switch Gateway
+                </button>
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { errorHandler } from './middleware/errorHandler';
 import loggerMiddleware, { appLogger } from './middleware/logger';
 import { authRoutes } from "./routes/auth.routes";
+import { walletRoutes } from "./routes/wallet.routes";
 import { createTradeRouter } from "./routes/trade.routes";
 import { createManifestRouter } from "./routes/manifest.routes";
 import { createEvidenceRouter } from "./routes/evidence.routes";
@@ -79,6 +80,7 @@ export function createApp(): express.Application {
   app.use("/health", createHealthRouter());
 
   app.use("/auth", authRoutes);
+  app.use("/wallet", walletRoutes);
 
   const tradeRouter = createTradeRouter();
   app.use("/trades", tradeRouter);

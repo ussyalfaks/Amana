@@ -29,7 +29,7 @@ function createMockPrisma() {
 
 function makeParsedEvent(
   eventType: EventType,
-  overrides: Partial<ParsedEvent> = {}
+  overrides: Partial<ParsedEvent> = {},
 ): ParsedEvent {
   return {
     eventType,
@@ -93,7 +93,7 @@ describe("eventHandlers", () => {
             sellerAddress: "",
             amountUsdc: "0",
           }),
-        })
+        }),
       );
     });
   });
@@ -110,7 +110,7 @@ describe("eventHandlers", () => {
         expect.objectContaining({
           where: { tradeId: "test-trade-001" },
           update: expect.objectContaining({ status: TradeStatus.FUNDED }),
-        })
+        }),
       );
     });
   });
@@ -125,7 +125,7 @@ describe("eventHandlers", () => {
       expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.DELIVERED }),
-        })
+        }),
       );
     });
   });
@@ -140,7 +140,7 @@ describe("eventHandlers", () => {
       expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.COMPLETED }),
-        })
+        }),
       );
     });
   });
@@ -155,7 +155,7 @@ describe("eventHandlers", () => {
       expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.DISPUTED }),
-        })
+        }),
       );
     });
   });
@@ -170,11 +170,11 @@ describe("eventHandlers", () => {
       expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.COMPLETED }),
-        })
+        }),
       );
     });
 
-    it("maps DisputeResolved to COMPLETED in EVENT_TO_STATUS", () => {
+    it("maps DisputeResolved to COMPLETED in EVENT_TO_STATUS", async () => {
       expect(EVENT_TO_STATUS[EventType.DisputeResolved]).toBe(
         TradeStatus.COMPLETED,
       );
@@ -185,7 +185,9 @@ describe("eventHandlers", () => {
 
   describe("dispatchEvent", () => {
     it("should route every EventType to its correct handler and status", async () => {
-      for (const [eventType, expectedStatus] of Object.entries(EVENT_TO_STATUS)) {
+      for (const [eventType, expectedStatus] of Object.entries(
+        EVENT_TO_STATUS,
+      )) {
         const prisma = createMockPrisma();
         const event = makeParsedEvent(eventType as EventType, {
           data:
@@ -199,7 +201,7 @@ describe("eventHandlers", () => {
         expect(prisma.trade.upsert).toHaveBeenCalledWith(
           expect.objectContaining({
             update: expect.objectContaining({ status: expectedStatus }),
-          })
+          }),
         );
       }
     });
@@ -212,7 +214,9 @@ describe("eventHandlers", () => {
         data: {},
       };
 
-      await expect(dispatchEvent(mockPrisma, event)).resolves.not.toThrow();
+      await expect(
+        dispatchEvent(mockPrisma, event as any),
+      ).resolves.not.toThrow();
     });
 
     it("should not call prisma for an unknown EventType", async () => {
@@ -221,7 +225,7 @@ describe("eventHandlers", () => {
         tradeId: "x",
         ledgerSequence: 0,
         data: {},
-      };
+      } as any;
 
       await dispatchEvent(mockPrisma, event);
 

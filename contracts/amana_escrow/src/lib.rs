@@ -109,6 +109,16 @@ pub struct VideoProofSubmittedEvent {
     pub ipfs_cid: String,
 }
 
+/// Emitted when seller submits hashed delivery manifest fields.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManifestSubmittedEvent {
+    pub trade_id: u64,
+    pub seller: Address,
+    pub driver_name_hash: String,
+    pub driver_id_hash: String,
+}
+
 /// Emitted when a mediator address is added to the registry by the admin.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,6 +205,16 @@ pub struct EvidenceRecord {
     pub submitted_at: u64,
 }
 
+/// Hash-only delivery manifest payload anchored on-chain.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeliveryManifestRecord {
+    pub seller: Address,
+    pub driver_name_hash: String,
+    pub driver_id_hash: String,
+    pub submitted_at: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataKey {
@@ -218,6 +238,8 @@ pub enum DataKey {
     EvidenceList(u64),
     /// Stores the single VideoProofRecord for a trade (one per trade, immutable once set).
     VideoProof(u64),
+    /// Stores the single DeliveryManifestRecord for a trade.
+    Manifest(u64),
 }
 
 // ---------------------------------------------------------------------------
@@ -813,6 +835,46 @@ impl EscrowContract {
             (symbol_short!("VIDPRF"), trade_id),
             VideoProofSubmittedEvent { trade_id, submitter, ipfs_cid },
         );
+    }
+
+    /// Submit hashed delivery manifest fields for a funded trade.
+    /// Only seller may submit, and only once per trade.
+    pub fn submit_manifest(env: Env, trade_id: u64, seller: Address, driver_name_hash: String, driver_id_hash: String) {
+        seller.require_auth();
+        assert!(driver_name_hash.len() > 0, "driver_name_hash must not be empty");
+        assert!(driver_id_hash.len() > 0, "driver_id_hash must not be empty");
+
+        let key = DataKey::Trade(trade_id);
+        let trade: Trade = env.storage().persistent().get(&key).expect("Trade not found");
+
+        assert!(matches!(trade.status, TradeStatus::Funded), "Trade must be funded");
+        assert!(seller == trade.seller, "Only seller can submit manifest");
+
+        let manifest_key = DataKey::Manifest(trade_id);
+        assert!(!env.storage().persistent().has(&manifest_key), "Manifest already submitted");
+
+        let record = DeliveryManifestRecord {
+            seller: seller.clone(),
+            driver_name_hash: driver_name_hash.clone(),
+            driver_id_hash: driver_id_hash.clone(),
+            submitted_at: env.ledger().timestamp(),
+        };
+        env.storage().persistent().set(&manifest_key, &record);
+
+        env.events().publish(
+            (symbol_short!("MNFST"), trade_id),
+            ManifestSubmittedEvent {
+                trade_id,
+                seller,
+                driver_name_hash,
+                driver_id_hash,
+            },
+        );
+    }
+
+    /// Fetch manifest record for a trade, if present.
+    pub fn get_manifest(env: Env, trade_id: u64) -> Option<DeliveryManifestRecord> {
+        env.storage().persistent().get(&DataKey::Manifest(trade_id))
     }
 
     /// Retrieve the video proof record for a trade, if any.
@@ -4309,6 +4371,133 @@ mod property_tests {
             assert!(buyer_balance >= 0, "buyer balance negative in scenario {}", i);
             assert!(treasury_balance >= 0, "treasury balance negative in scenario {}", i);
         }
+    }
+
+    #[test]
+    fn test_submit_manifest_succeeds_for_seller_in_funded_status() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        client.initialize(&admin, &usdc_id, &treasury, &100_u32);
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &10_000_i128);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let name_hash = String::from_str(&env, "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
+        let id_hash = String::from_str(&env, "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+
+        client.submit_manifest(&trade_id, &seller, &name_hash, &id_hash);
+
+        let manifest = client.get_manifest(&trade_id).expect("manifest should exist");
+        assert_eq!(manifest.seller, seller);
+        assert_eq!(manifest.driver_name_hash, name_hash);
+        assert_eq!(manifest.driver_id_hash, id_hash);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only seller can submit manifest")]
+    fn test_submit_manifest_rejects_non_seller() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        client.initialize(&admin, &usdc_id, &treasury, &100_u32);
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &10_000_i128);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let name_hash = String::from_str(&env, "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
+        let id_hash = String::from_str(&env, "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+
+        client.submit_manifest(&trade_id, &buyer, &name_hash, &id_hash);
+    }
+
+    #[test]
+    #[should_panic(expected = "Manifest already submitted")]
+    fn test_submit_manifest_rejects_second_submission() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        client.initialize(&admin, &usdc_id, &treasury, &100_u32);
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &10_000_i128);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let first_name_hash = String::from_str(&env, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let first_id_hash = String::from_str(&env, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        client.submit_manifest(&trade_id, &seller, &first_name_hash, &first_id_hash);
+
+        let second_name_hash = String::from_str(&env, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+        let second_id_hash = String::from_str(&env, "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd");
+        client.submit_manifest(&trade_id, &seller, &second_name_hash, &second_id_hash);
+    }
+
+    #[test]
+    fn test_failed_guard_check_keeps_trade_state_unchanged() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(EscrowContract, ());
+        let client = EscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let seller = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let usdc_id = env.register_stellar_asset_contract(admin.clone());
+        client.initialize(&admin, &usdc_id, &treasury, &100_u32);
+        let token_client = token::StellarAssetClient::new(&env, &usdc_id);
+        token_client.mint(&buyer, &10_000_i128);
+        let trade_id = client.create_trade(&buyer, &seller, &10_000_i128, &5000_u32, &5000_u32);
+        client.deposit(&trade_id);
+
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let before = client.get_trade(&trade_id);
+        assert!(matches!(before.status, TradeStatus::Funded));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let name_hash = String::from_str(&env, "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
+            let id_hash = String::from_str(&env, "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
+            client.submit_manifest(&trade_id, &Address::generate(&env), &name_hash, &id_hash);
+        }));
+
+        assert!(result.is_err());
+
+        let after = client.get_trade(&trade_id);
+        assert!(matches!(after.status, TradeStatus::Funded));
+        let manifest = client.get_manifest(&trade_id);
+        assert!(manifest.is_none());
+
+        let _ = seller;
     }
 }
 

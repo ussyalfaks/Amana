@@ -15,6 +15,14 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as StellarSdk from "@stellar/stellar-sdk";
+
+vi.hoisted(() => {
+    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-at-least-32-characters-long";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test:test@localhost:5432/test";
+    process.env.AMANA_ESCROW_CONTRACT_ID = process.env.AMANA_ESCROW_CONTRACT_ID || "CONTRACT_ID";
+    process.env.USDC_CONTRACT_ID = process.env.USDC_CONTRACT_ID || "USDC_CONTRACT_ID";
+});
+
 import {
     ContractService,
     BuildCreateTradeTxInput,
@@ -64,6 +72,15 @@ const CONTRACT_ABI = {
             { name: "trade_id", type: "u64" },
             { name: "initiator", type: "Address" },
             { name: "reason_hash", type: "String" },
+        ],
+        returnType: "void",
+    },
+    submit_manifest: {
+        name: "submit_manifest",
+        args: [
+            { name: "trade_id", type: "u64" },
+            { name: "driver_name_hash", type: "String" },
+            { name: "driver_id_hash", type: "String" },
         ],
         returnType: "void",
     },
@@ -519,6 +536,58 @@ describe("ABI Compatibility Tests", () => {
     });
 
     // ============================================================================
+    // submit_manifest ABI Tests
+    // ============================================================================
+
+    describe("submit_manifest ABI compatibility", () => {
+        it("should call submit_manifest with correct argument count", async () => {
+            await contractService.buildSubmitManifestTx({
+                tradeId: "123456789",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                driverNameHash: "a".repeat(64),
+                driverIdHash: "b".repeat(64),
+            });
+
+            const callArgs = captureContractCallArgs(mockContract, "submit_manifest");
+            expect(callArgs).not.toBeNull();
+            expect(callArgs!.functionName).toBe("submit_manifest");
+
+            const abi = CONTRACT_ABI.submit_manifest;
+            expect(callArgs!.args).toHaveLength(abi.args.length);
+        });
+
+        it("should call submit_manifest with correct argument types", async () => {
+            await contractService.buildSubmitManifestTx({
+                tradeId: "123456789",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                driverNameHash: "a".repeat(64),
+                driverIdHash: "b".repeat(64),
+            });
+
+            const callArgs = captureContractCallArgs(mockContract, "submit_manifest");
+            expect(callArgs).not.toBeNull();
+
+            const abi = CONTRACT_ABI.submit_manifest;
+            expect(validateScValType(callArgs!.args[0], abi.args[0].type)).toBe(true);
+            expect(validateScValType(callArgs!.args[1], abi.args[1].type)).toBe(true);
+            expect(validateScValType(callArgs!.args[2], abi.args[2].type)).toBe(true);
+        });
+
+        it("should call submit_manifest with correct argument order", async () => {
+            await contractService.buildSubmitManifestTx({
+                tradeId: "123456789",
+                sellerAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                driverNameHash: "a".repeat(64),
+                driverIdHash: "b".repeat(64),
+            });
+
+            const callArgs = captureContractCallArgs(mockContract, "submit_manifest");
+            expect(callArgs).not.toBeNull();
+            expect(callArgs!.args).toHaveLength(3);
+        });
+    });
+
+    // ============================================================================
     // Cross-Function ABI Validation
     // ============================================================================
 
@@ -530,6 +599,7 @@ describe("ABI Compatibility Tests", () => {
                 "confirm_delivery",
                 "release_funds",
                 "initiate_dispute",
+                "submit_manifest",
             ];
 
             for (const funcName of requiredFunctions) {

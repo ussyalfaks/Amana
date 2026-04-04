@@ -2,6 +2,9 @@
  * Type definitions for Soroban contract event processing.
  * Maps to the on-chain TradeStatus enum defined in contracts/amana_escrow/src/lib.rs.
  */
+import { TradeStatus } from "@prisma/client";
+
+export { TradeStatus };
 
 export enum EventType {
   TradeCreated = "TradeCreated",
@@ -12,15 +15,6 @@ export enum EventType {
   DisputeResolved = "DisputeResolved",
 }
 
-export enum TradeStatus {
-  CREATED = "CREATED",
-  FUNDED = "FUNDED",
-  DELIVERED = "DELIVERED",
-  COMPLETED = "COMPLETED",
-  DISPUTED = "DISPUTED",
-  CANCELLED = "CANCELLED",
-}
-
 /** Mapping from EventType to the resulting TradeStatus */
 export const EVENT_TO_STATUS: Record<EventType, TradeStatus> = {
   [EventType.TradeCreated]: TradeStatus.CREATED,
@@ -28,13 +22,15 @@ export const EVENT_TO_STATUS: Record<EventType, TradeStatus> = {
   [EventType.DeliveryConfirmed]: TradeStatus.DELIVERED,
   [EventType.FundsReleased]: TradeStatus.COMPLETED,
   [EventType.DisputeInitiated]: TradeStatus.DISPUTED,
-  [EventType.DisputeResolved]: TradeStatus.CANCELLED,
+  [EventType.DisputeResolved]: TradeStatus.COMPLETED,
 };
 
 export interface ParsedEvent {
   eventType: EventType;
   tradeId: string;
   ledgerSequence: number;
+  contractId: string;
+  eventId: string; // raw Soroban event.id
   /** Raw data payload from Soroban event */
   data: Record<string, unknown>;
 }

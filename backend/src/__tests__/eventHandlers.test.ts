@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { jest } from "@jest/globals";
+import { Prisma } from "@prisma/client";
 import {
   handleTradeCreated,
   handleTradeFunded,
@@ -19,22 +20,24 @@ import {
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-function createMockPrisma() {
+function createMockTx() {
   return {
     trade: {
-      upsert: jest.fn().mockResolvedValue({}),
+      upsert: jest.fn(async () => ({})),
     },
-  } as unknown as PrismaClient;
+  } as unknown as Prisma.TransactionClient;
 }
 
 function makeParsedEvent(
   eventType: EventType,
-  overrides: Partial<ParsedEvent> = {}
+  overrides: Partial<ParsedEvent> = {},
 ): ParsedEvent {
   return {
     eventType,
     tradeId: "test-trade-001",
     ledgerSequence: 12345,
+    contractId: "CONTRACT_TEST_123",
+    eventId: "evt-12345",
     data: {},
     ...overrides,
   };
@@ -45,12 +48,10 @@ function makeParsedEvent(
 /* ------------------------------------------------------------------ */
 
 describe("eventHandlers", () => {
-  let mockPrisma: ReturnType<typeof createMockPrisma>;
+  let mockTx: ReturnType<typeof createMockTx>;
 
   beforeEach(() => {
-    mockPrisma = createMockPrisma();
-    jest.spyOn(console, "log").mockImplementation();
-    jest.spyOn(console, "warn").mockImplementation();
+    mockTx = createMockTx();
   });
 
   afterEach(() => {
@@ -65,9 +66,9 @@ describe("eventHandlers", () => {
         data: { buyer: "GA_BUYER", seller: "GA_SELLER", amount_usdc: 1000 },
       });
 
-      await handleTradeCreated(mockPrisma, event);
+      await handleTradeCreated(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith({
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith({
         where: { tradeId: "test-trade-001" },
         update: {
           status: TradeStatus.CREATED,
@@ -75,8 +76,8 @@ describe("eventHandlers", () => {
         },
         create: {
           tradeId: "test-trade-001",
-          buyer: "GA_BUYER",
-          seller: "GA_SELLER",
+          buyerAddress: "GA_BUYER",
+          sellerAddress: "GA_SELLER",
           amountUsdc: "1000",
           status: TradeStatus.CREATED,
         },
@@ -86,16 +87,16 @@ describe("eventHandlers", () => {
     it("should default buyer/seller to empty string when absent", async () => {
       const event = makeParsedEvent(EventType.TradeCreated, { data: {} });
 
-      await handleTradeCreated(mockPrisma, event);
+      await handleTradeCreated(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
-            buyer: "",
-            seller: "",
+            buyerAddress: "",
+            sellerAddress: "",
             amountUsdc: "0",
           }),
-        })
+        }),
       );
     });
   });
@@ -106,13 +107,13 @@ describe("eventHandlers", () => {
     it("should upsert Trade with FUNDED status", async () => {
       const event = makeParsedEvent(EventType.TradeFunded);
 
-      await handleTradeFunded(mockPrisma, event);
+      await handleTradeFunded(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { tradeId: "test-trade-001" },
           update: expect.objectContaining({ status: TradeStatus.FUNDED }),
-        })
+        }),
       );
     });
   });
@@ -122,12 +123,12 @@ describe("eventHandlers", () => {
   describe("handleDeliveryConfirmed", () => {
     it("should upsert Trade with DELIVERED status", async () => {
       const event = makeParsedEvent(EventType.DeliveryConfirmed);
-      await handleDeliveryConfirmed(mockPrisma, event);
+      await handleDeliveryConfirmed(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.DELIVERED }),
-        })
+        }),
       );
     });
   });
@@ -137,12 +138,12 @@ describe("eventHandlers", () => {
   describe("handleFundsReleased", () => {
     it("should upsert Trade with COMPLETED status", async () => {
       const event = makeParsedEvent(EventType.FundsReleased);
-      await handleFundsReleased(mockPrisma, event);
+      await handleFundsReleased(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.COMPLETED }),
-        })
+        }),
       );
     });
   });
@@ -152,12 +153,12 @@ describe("eventHandlers", () => {
   describe("handleDisputeInitiated", () => {
     it("should upsert Trade with DISPUTED status", async () => {
       const event = makeParsedEvent(EventType.DisputeInitiated);
-      await handleDisputeInitiated(mockPrisma, event);
+      await handleDisputeInitiated(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           update: expect.objectContaining({ status: TradeStatus.DISPUTED }),
-        })
+        }),
       );
     });
   });
@@ -165,14 +166,20 @@ describe("eventHandlers", () => {
   /* ---------- handleDisputeResolved ------------------------------- */
 
   describe("handleDisputeResolved", () => {
-    it("should upsert Trade with CANCELLED status", async () => {
+    it("should upsert Trade with COMPLETED status when dispute is resolved", async () => {
       const event = makeParsedEvent(EventType.DisputeResolved);
-      await handleDisputeResolved(mockPrisma, event);
+      await handleDisputeResolved(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).toHaveBeenCalledWith(
+      expect(mockTx.trade.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          update: expect.objectContaining({ status: TradeStatus.CANCELLED }),
-        })
+          update: expect.objectContaining({ status: TradeStatus.COMPLETED }),
+        }),
+      );
+    });
+
+    it("maps DisputeResolved to COMPLETED in EVENT_TO_STATUS", async () => {
+      expect(EVENT_TO_STATUS[EventType.DisputeResolved]).toBe(
+        TradeStatus.COMPLETED,
       );
     });
   });
@@ -182,7 +189,7 @@ describe("eventHandlers", () => {
   describe("dispatchEvent", () => {
     it("should route every EventType to its correct handler and status", async () => {
       for (const [eventType, expectedStatus] of Object.entries(EVENT_TO_STATUS)) {
-        const prisma = createMockPrisma();
+        const tx = createMockTx();
         const event = makeParsedEvent(eventType as EventType, {
           data:
             eventType === EventType.TradeCreated
@@ -190,12 +197,12 @@ describe("eventHandlers", () => {
               : {},
         });
 
-        await dispatchEvent(prisma, event);
+        await dispatchEvent(tx, event);
 
-        expect(prisma.trade.upsert).toHaveBeenCalledWith(
+        expect(tx.trade.upsert).toHaveBeenCalledWith(
           expect.objectContaining({
             update: expect.objectContaining({ status: expectedStatus }),
-          })
+          }),
         );
       }
     });
@@ -205,26 +212,27 @@ describe("eventHandlers", () => {
         eventType: "NonExistentEvent" as EventType,
         tradeId: "orphan-001",
         ledgerSequence: 1,
+        contractId: "CONTRACT_TEST_123",
+        eventId: "evt-1",
         data: {},
       };
 
-      await expect(dispatchEvent(mockPrisma, event)).resolves.not.toThrow();
-      expect(console.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Unknown event type")
-      );
+      await expect(dispatchEvent(mockTx, event)).resolves.not.toThrow();
     });
 
-    it("should not call prisma for an unknown EventType", async () => {
+    it("should not call tx for an unknown EventType", async () => {
       const event = {
         eventType: "BadType" as EventType,
         tradeId: "x",
         ledgerSequence: 0,
+        contractId: "CONTRACT_TEST_123",
+        eventId: "evt-0",
         data: {},
-      };
+      } as any;
 
-      await dispatchEvent(mockPrisma, event);
+      await dispatchEvent(mockTx, event);
 
-      expect(mockPrisma.trade.upsert).not.toHaveBeenCalled();
+      expect(mockTx.trade.upsert).not.toHaveBeenCalled();
     });
   });
 });

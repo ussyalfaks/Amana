@@ -138,9 +138,25 @@ export default function TradesPage() {
       {!loading && !error && (
         <>
           {trades.length === 0 ? (
-            <p className="text-text-muted text-sm py-12 text-center">
-              No trades found.
-            </p>
+            <div className="rounded-lg border border-border-default bg-bg-card py-16 px-6 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 rounded-lg bg-bg-elevated border border-border-default flex items-center justify-center">
+                  <svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold text-text-primary mb-2">No trades yet</h3>
+              <p className="text-text-secondary text-sm mb-6">
+                Get started by creating your first trade to begin settling agricultural transactions.
+              </p>
+              <Link
+                href="/trades/create"
+                className="inline-block px-4 py-2 rounded-md bg-gold text-text-inverse text-sm font-medium hover:bg-gold-hover transition-colors"
+              >
+                Create Your First Trade
+              </Link>
+            </div>
           ) : (
             <div className="rounded-lg border border-border-default overflow-hidden">
               <table className="w-full text-sm">
